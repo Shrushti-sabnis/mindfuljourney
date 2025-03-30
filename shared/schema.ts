@@ -1,6 +1,7 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, foreignKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { relations } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -15,20 +16,34 @@ export const users = pgTable("users", {
 
 export const journals = pgTable("journals", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   content: text("content").notNull(),
   mood: integer("mood").notNull(), // 1-5 scale (1: rough, 2: low, 3: okay, 4: good, 5: great)
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const journalsRelations = relations(journals, ({ one }) => ({
+  user: one(users, {
+    fields: [journals.userId],
+    references: [users.id],
+  }),
+}));
+
 export const moods = pgTable("moods", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   rating: integer("rating").notNull(), // 1-5 scale
   note: text("note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const moodsRelations = relations(moods, ({ one }) => ({
+  user: one(users, {
+    fields: [moods.userId],
+    references: [users.id],
+  }),
+}));
 
 export const mindfulnessSessions = pgTable("mindfulness_sessions", {
   id: serial("id").primaryKey(),
@@ -38,7 +53,14 @@ export const mindfulnessSessions = pgTable("mindfulness_sessions", {
   imageUrl: text("image_url").notNull(),
   duration: integer("duration").notNull(), // in seconds
   isPremium: boolean("is_premium").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Define relationships
+export const usersRelations = relations(users, ({ many }) => ({
+  journals: many(journals),
+  moods: many(moods),
+}));
 
 // Zod schemas for insert operations
 export const insertUserSchema = createInsertSchema(users).pick({

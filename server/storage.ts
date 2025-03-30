@@ -1,8 +1,15 @@
 import { users, type User, type InsertUser, journals, type Journal, type InsertJournal, moods, type Mood, type InsertMood, mindfulnessSessions, type MindfulnessSession } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
+import pkg from "pg";
+const { Pool } = pkg;
+import { drizzle } from "drizzle-orm/node-postgres";
+import { eq, desc, gte, lte, and } from "drizzle-orm";
+import connectPg from "connect-pg-simple";
+import { hashPassword, comparePasswords } from "./auth";
 
 const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   // User operations
@@ -13,6 +20,7 @@ export interface IStorage {
   updateUserPremium(id: number, isPremium: boolean): Promise<User>;
   updateUserStripeInfo(id: number, stripeInfo: { stripeCustomerId: string; stripeSubscriptionId: string }): Promise<User>;
   updateUserProfile(id: number, userData: { username?: string; email?: string }): Promise<User>;
+  updateUserPassword(id: number, oldPassword: string, newPassword: string): Promise<User>;
 
   // Journal operations
   getJournal(id: number): Promise<Journal | undefined>;
@@ -204,6 +212,29 @@ export class MemStorage implements IStorage {
     this.users.set(id, updatedUser);
     return updatedUser;
   }
+  
+  async updateUserPassword(id: number, oldPassword: string, newPassword: string): Promise<User> {
+    const user = await this.getUser(id);
+    if (!user) throw new Error("User not found");
+    
+    // Verify old password
+    const isPasswordValid = await comparePasswords(oldPassword, user.password);
+    if (!isPasswordValid) {
+      throw new Error("Current password is incorrect");
+    }
+    
+    // Hash the new password
+    const hashedPassword = await hashPassword(newPassword);
+    
+    // Update the user with the new password
+    const updatedUser = { 
+      ...user,
+      password: hashedPassword
+    };
+    
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
 
   // Journal operations
   async getJournal(id: number): Promise<Journal | undefined> {
@@ -295,4 +326,316 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Create a PostgreSQL database storage class
+export class DatabaseStorage implements IStorage {
+  private db: ReturnType<typeof drizzle>;
+  sessionStore: any;
+
+  constructor() {
+    // Create a PostgreSQL pool connection
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+
+    // Initialize Drizzle ORM with the PostgreSQL pool
+    this.db = drizzle(pool);
+
+    // Initialize session store with the PostgreSQL pool
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true,
+    });
+
+    // Initialize mindfulness sessions
+    this.initMindfulnessSessions();
+  }
+
+  private async initMindfulnessSessions() {
+    try {
+      // Check if there are any existing mindfulness sessions
+      const existingSessions = await this.db.select().from(mindfulnessSessions);
+
+      if (existingSessions.length > 0) {
+        console.log('Mindfulness sessions already exist in database');
+        return;
+      }
+
+      console.log('Initializing mindfulness sessions in database...');
+
+      const now = new Date();
+
+      // Free sessions
+      const freeSessions = [
+        {
+          title: "Morning Meditation",
+          description: "Start your day with clarity and intention",
+          audioUrl: "https://example.com/audio/morning-meditation.mp3",
+          imageUrl: "https://images.unsplash.com/photo-1506126613408-eca07ce68773",
+          duration: 600, // 10 minutes
+          isPremium: false,
+          createdAt: now
+        },
+        {
+          title: "Stress Relief",
+          description: "Release tension and find calm",
+          audioUrl: "https://example.com/audio/stress-relief.mp3",
+          imageUrl: "https://images.unsplash.com/photo-1528715471579-d1bcf0ba5e83",
+          duration: 900, // 15 minutes
+          isPremium: false,
+          createdAt: now
+        },
+        {
+          title: "Evening Wind Down",
+          description: "Prepare your mind for restful sleep",
+          audioUrl: "https://example.com/audio/evening-wind-down.mp3",
+          imageUrl: "https://images.unsplash.com/photo-1519834804175-d5e9788535ac",
+          duration: 480, // 8 minutes
+          isPremium: false,
+          createdAt: now
+        }
+      ];
+
+      // Premium sessions
+      const premiumSessions = [
+        {
+          title: "Deep Focus",
+          description: "Enhance concentration and productivity",
+          audioUrl: "https://example.com/audio/deep-focus.mp3",
+          imageUrl: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b",
+          duration: 1200, // 20 minutes
+          isPremium: true,
+          createdAt: now
+        },
+        {
+          title: "Anxiety Release",
+          description: "Techniques to calm anxious thoughts",
+          audioUrl: "https://example.com/audio/anxiety-release.mp3",
+          imageUrl: "https://images.unsplash.com/photo-1515894274780-af5088f618f6",
+          duration: 900, // 15 minutes
+          isPremium: true,
+          createdAt: now
+        }
+      ];
+
+      // Insert all sessions to the database
+      for (const session of [...freeSessions, ...premiumSessions]) {
+        await this.db.insert(mindfulnessSessions).values(session);
+      }
+
+      console.log('Mindfulness sessions initialized successfully');
+    } catch (error) {
+      console.error('Error initializing mindfulness sessions:', error);
+    }
+  }
+
+  // User operations
+  async getUser(id: number): Promise<User | undefined> {
+    const result = await this.db.select().from(users).where(eq(users.id, id));
+    return result[0];
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const result = await this.db.select().from(users).where(eq(users.username, username));
+    return result[0];
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    if (!email) return undefined;
+    const result = await this.db.select().from(users).where(eq(users.email, email));
+    return result[0];
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await this.db.insert(users).values(insertUser).returning();
+    return user;
+  }
+
+  async updateUserPremium(id: number, isPremium: boolean): Promise<User> {
+    const [updatedUser] = await this.db
+      .update(users)
+      .set({ isPremium })
+      .where(eq(users.id, id))
+      .returning();
+    
+    if (!updatedUser) {
+      throw new Error(`User with ID ${id} not found`);
+    }
+    
+    return updatedUser;
+  }
+
+  async updateUserStripeInfo(id: number, stripeInfo: { stripeCustomerId: string; stripeSubscriptionId: string }): Promise<User> {
+    const [updatedUser] = await this.db
+      .update(users)
+      .set({
+        stripeCustomerId: stripeInfo.stripeCustomerId,
+        stripeSubscriptionId: stripeInfo.stripeSubscriptionId,
+        isPremium: true
+      })
+      .where(eq(users.id, id))
+      .returning();
+    
+    if (!updatedUser) {
+      throw new Error(`User with ID ${id} not found`);
+    }
+    
+    return updatedUser;
+  }
+
+  async updateUserProfile(id: number, userData: { username?: string; email?: string }): Promise<User> {
+    // Check if username is already taken
+    if (userData.username) {
+      const existingUser = await this.getUserByUsername(userData.username);
+      if (existingUser && existingUser.id !== id) {
+        throw new Error('Username is already taken');
+      }
+    }
+    
+    // Check if email is already taken
+    if (userData.email) {
+      const existingUser = await this.getUserByEmail(userData.email);
+      if (existingUser && existingUser.id !== id) {
+        throw new Error('Email is already taken');
+      }
+    }
+    
+    const [updatedUser] = await this.db
+      .update(users)
+      .set(userData)
+      .where(eq(users.id, id))
+      .returning();
+    
+    if (!updatedUser) {
+      throw new Error(`User with ID ${id} not found`);
+    }
+    
+    return updatedUser;
+  }
+  
+  async updateUserPassword(id: number, oldPassword: string, newPassword: string): Promise<User> {
+    // Get the user first to check the old password
+    const user = await this.getUser(id);
+    
+    if (!user) {
+      throw new Error(`User with ID ${id} not found`);
+    }
+    
+    // Verify old password
+    const isPasswordValid = await comparePasswords(oldPassword, user.password);
+    
+    if (!isPasswordValid) {
+      throw new Error('Current password is incorrect');
+    }
+    
+    // Hash the new password
+    const hashedPassword = await hashPassword(newPassword);
+    
+    // Update the password
+    const [updatedUser] = await this.db
+      .update(users)
+      .set({ password: hashedPassword })
+      .where(eq(users.id, id))
+      .returning();
+    
+    return updatedUser;
+  }
+
+  // Journal operations
+  async getJournal(id: number): Promise<Journal | undefined> {
+    const result = await this.db.select().from(journals).where(eq(journals.id, id));
+    return result[0];
+  }
+
+  async getJournalsByUserId(userId: number): Promise<Journal[]> {
+    return await this.db
+      .select()
+      .from(journals)
+      .where(eq(journals.userId, userId))
+      .orderBy(desc(journals.createdAt));
+  }
+
+  async createJournal(journal: InsertJournal): Promise<Journal> {
+    const [newJournal] = await this.db.insert(journals).values(journal).returning();
+    return newJournal;
+  }
+
+  async updateJournal(id: number, journal: Partial<InsertJournal>): Promise<Journal> {
+    const [updatedJournal] = await this.db
+      .update(journals)
+      .set(journal)
+      .where(eq(journals.id, id))
+      .returning();
+    
+    if (!updatedJournal) {
+      throw new Error(`Journal with ID ${id} not found`);
+    }
+    
+    return updatedJournal;
+  }
+
+  async deleteJournal(id: number): Promise<boolean> {
+    const result = await this.db.delete(journals).where(eq(journals.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Mood operations
+  async getMood(id: number): Promise<Mood | undefined> {
+    const result = await this.db.select().from(moods).where(eq(moods.id, id));
+    return result[0];
+  }
+
+  async getMoodsByUserId(userId: number): Promise<Mood[]> {
+    return await this.db
+      .select()
+      .from(moods)
+      .where(eq(moods.userId, userId))
+      .orderBy(desc(moods.createdAt));
+  }
+
+  async getMoodsByUserIdInRange(userId: number, startDate: Date, endDate: Date): Promise<Mood[]> {
+    return await this.db
+      .select()
+      .from(moods)
+      .where(
+        and(
+          eq(moods.userId, userId),
+          gte(moods.createdAt, startDate),
+          lte(moods.createdAt, endDate)
+        )
+      )
+      .orderBy(moods.createdAt);
+  }
+
+  async createMood(mood: InsertMood): Promise<Mood> {
+    const [newMood] = await this.db.insert(moods).values({
+      ...mood,
+      note: mood.note || null // Ensure note is string or null, never undefined
+    }).returning();
+    
+    return newMood;
+  }
+
+  // Mindfulness operations
+  async getMindfulnessSessions(includePremium: boolean): Promise<MindfulnessSession[]> {
+    if (includePremium) {
+      return await this.db.select().from(mindfulnessSessions);
+    } else {
+      return await this.db
+        .select()
+        .from(mindfulnessSessions)
+        .where(eq(mindfulnessSessions.isPremium, false));
+    }
+  }
+
+  async getMindfulnessSession(id: number): Promise<MindfulnessSession | undefined> {
+    const result = await this.db
+      .select()
+      .from(mindfulnessSessions)
+      .where(eq(mindfulnessSessions.id, id));
+    
+    return result[0];
+  }
+}
+
+// Use the database storage instead of memory storage
+export const storage = new DatabaseStorage();

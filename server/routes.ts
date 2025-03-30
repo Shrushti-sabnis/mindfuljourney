@@ -259,6 +259,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ message: error.message || "Failed to update profile" });
     }
   });
+  
+  // Update user password
+  app.put("/api/user/password", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      // Validate the request body
+      const passwordUpdateSchema = z.object({
+        currentPassword: z.string().min(6, "Password must be at least 6 characters"),
+        newPassword: z.string().min(6, "New password must be at least 6 characters"),
+        confirmPassword: z.string().min(6, "Confirm password must be at least 6 characters"),
+      }).refine((data) => data.newPassword === data.confirmPassword, {
+        message: "New password and confirm password do not match",
+        path: ["confirmPassword"],
+      });
+      
+      const passwordData = passwordUpdateSchema.parse(req.body);
+      
+      // Update the user password
+      const updatedUser = await storage.updateUserPassword(
+        req.user!.id, 
+        passwordData.currentPassword,
+        passwordData.newPassword
+      );
+      
+      // Update the user in the session
+      req.login(updatedUser, (err) => {
+        if (err) {
+          console.error("Session update error:", err);
+          return res.status(500).json({ message: "Failed to update session" });
+        }
+        
+        // Return success without user data to avoid returning password in response
+        res.json({ message: "Password updated successfully" });
+      });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        const errorMessage = handleZodError(error);
+        return res.status(400).json({ message: errorMessage });
+      }
+      
+      console.error("Error updating password:", error);
+      res.status(400).json({ message: error.message || "Failed to update password" });
+    }
+  });
 
   // Mindfulness session routes
   app.get("/api/mindfulness", async (req, res) => {
