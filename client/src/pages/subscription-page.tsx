@@ -13,8 +13,7 @@ import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-
 
 // Initialize Stripe
 const stripePromise = loadStripe(
-  import.meta.env.VITE_STRIPE_PUBLIC_KEY || 
-  "pk_test_TYooMQauvdEDq54NiTphI7jx" // Fallback for development
+  import.meta.env.VITE_STRIPE_PUBLIC_KEY as string
 );
 
 // Checkout form component
