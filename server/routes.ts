@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 import { insertJournalSchema, insertMoodSchema, User } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import Stripe from "stripe";
+import { z } from "zod";
 
 // Helper function to get all users from storage
 async function getAllUsers(): Promise<User[]> {
@@ -214,6 +215,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       const errorMessage = handleZodError(error);
       res.status(400).json({ message: errorMessage });
+    }
+  });
+
+  // User profile routes
+  app.put("/api/user/profile", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      // Validate the request body
+      const userProfileSchema = z.object({
+        username: z.string().min(3).max(50).optional(),
+        email: z.string().email().optional(),
+      });
+      
+      const profileData = userProfileSchema.parse(req.body);
+      
+      // Check that at least one field is being updated
+      if (!profileData.username && !profileData.email) {
+        return res.status(400).json({ message: "No fields to update" });
+      }
+      
+      // Update the user profile
+      const updatedUser = await storage.updateUserProfile(req.user!.id, profileData);
+      
+      // Update the user in the session
+      req.login(updatedUser, (err) => {
+        if (err) {
+          console.error("Session update error:", err);
+          return res.status(500).json({ message: "Failed to update session" });
+        }
+        
+        // Return the updated user profile
+        res.json(updatedUser);
+      });
+    } catch (error: any) {
+      if (error instanceof ZodError) {
+        const errorMessage = handleZodError(error);
+        return res.status(400).json({ message: errorMessage });
+      }
+      
+      console.error("Error updating profile:", error);
+      res.status(400).json({ message: error.message || "Failed to update profile" });
     }
   });
 

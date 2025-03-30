@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { UserProfileDialog } from "@/components/user/user-profile-dialog";
 import { 
   Home, 
   BookOpenText, 
@@ -9,12 +10,14 @@ import {
   Waves, 
   Menu,
   LogOut,
+  Settings,
   X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function MobileHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const { user, logoutMutation } = useAuth();
   const [location] = useLocation();
 
@@ -98,20 +101,39 @@ export function MobileHeader() {
                       </p>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleLogout}
-                    title="Logout"
-                  >
-                    <LogOut className="h-4 w-4" />
-                  </Button>
+                  <div className="flex space-x-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setProfileDialogOpen(true);
+                        setMenuOpen(false);
+                      }}
+                      title="Edit Profile"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleLogout}
+                      title="Logout"
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </nav>
           </div>
         )}
       </div>
+      
+      {/* Profile Dialog */}
+      <UserProfileDialog 
+        open={profileDialogOpen} 
+        onOpenChange={setProfileDialogOpen} 
+      />
     </div>
   );
 }

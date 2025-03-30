@@ -68,8 +68,17 @@ export default function JournalPage() {
   // Create journal mutation
   const createJournalMutation = useMutation({
     mutationFn: async (data: { title: string; content: string; mood: number }) => {
-      const response = await apiRequest("POST", "/api/journals", data);
-      return await response.json();
+      try {
+        // First ensure we have authentication by checking user endpoint
+        await apiRequest("GET", "/api/user");
+        
+        // Then try to create the journal
+        const response = await apiRequest("POST", "/api/journals", data);
+        return await response.json();
+      } catch (error) {
+        console.error("Error creating journal:", error);
+        throw error;
+      }
     },
     onSuccess: (data) => {
       toast({
@@ -81,6 +90,19 @@ export default function JournalPage() {
       setIsEditing(false);
     },
     onError: (error: Error) => {
+      console.error("Journal mutation error:", error);
+      
+      // If it's an authentication error, redirect to login
+      if (error.message.includes("401")) {
+        toast({
+          title: "Authentication required",
+          description: "Please login to create a journal entry.",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        return;
+      }
+      
       toast({
         title: "Failed to create journal",
         description: error.message,
@@ -92,12 +114,21 @@ export default function JournalPage() {
   // Update journal mutation
   const updateJournalMutation = useMutation({
     mutationFn: async (data: { id: number; title: string; content: string; mood: number }) => {
-      const response = await apiRequest("PUT", `/api/journals/${data.id}`, {
-        title: data.title,
-        content: data.content,
-        mood: data.mood,
-      });
-      return await response.json();
+      try {
+        // First check authentication
+        await apiRequest("GET", "/api/user");
+        
+        // Then update the journal
+        const response = await apiRequest("PUT", `/api/journals/${data.id}`, {
+          title: data.title,
+          content: data.content,
+          mood: data.mood,
+        });
+        return await response.json();
+      } catch (error) {
+        console.error("Error updating journal:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       toast({
@@ -109,6 +140,19 @@ export default function JournalPage() {
       setIsEditing(false);
     },
     onError: (error: Error) => {
+      console.error("Journal update error:", error);
+      
+      // If it's an authentication error, redirect to login
+      if (error.message.includes("401")) {
+        toast({
+          title: "Authentication required",
+          description: "Please login to update a journal entry.",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        return;
+      }
+      
       toast({
         title: "Failed to update journal",
         description: error.message,
@@ -120,7 +164,16 @@ export default function JournalPage() {
   // Delete journal mutation
   const deleteJournalMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/journals/${id}`);
+      try {
+        // First check authentication
+        await apiRequest("GET", "/api/user");
+        
+        // Then delete the journal
+        await apiRequest("DELETE", `/api/journals/${id}`);
+      } catch (error) {
+        console.error("Error deleting journal:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       toast({
@@ -132,6 +185,19 @@ export default function JournalPage() {
       setDeleteDialogOpen(false);
     },
     onError: (error: Error) => {
+      console.error("Journal deletion error:", error);
+      
+      // If it's an authentication error, redirect to login
+      if (error.message.includes("401")) {
+        toast({
+          title: "Authentication required",
+          description: "Please login to delete a journal entry.",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        return;
+      }
+      
       toast({
         title: "Failed to delete journal",
         description: error.message,

@@ -12,6 +12,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUserPremium(id: number, isPremium: boolean): Promise<User>;
   updateUserStripeInfo(id: number, stripeInfo: { stripeCustomerId: string; stripeSubscriptionId: string }): Promise<User>;
+  updateUserProfile(id: number, userData: { username?: string; email?: string }): Promise<User>;
 
   // Journal operations
   getJournal(id: number): Promise<Journal | undefined>;
@@ -31,7 +32,7 @@ export interface IStorage {
   getMindfulnessSession(id: number): Promise<MindfulnessSession | undefined>;
   
   // Session store for auth
-  sessionStore: session.SessionStore;
+  sessionStore: any; // Using any type to avoid import resolution issues
 }
 
 export class MemStorage implements IStorage {
@@ -39,7 +40,7 @@ export class MemStorage implements IStorage {
   private journals: Map<number, Journal>;
   private moods: Map<number, Mood>;
   private mindfulnessSessions: Map<number, MindfulnessSession>;
-  sessionStore: session.SessionStore;
+  sessionStore: any; // Using any type to avoid import resolution issues
   private userId: number;
   private journalId: number;
   private moodId: number;
@@ -143,6 +144,8 @@ export class MemStorage implements IStorage {
       ...insertUser,
       id,
       isPremium: false,
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
       createdAt: now
     };
     this.users.set(id, user);
@@ -168,6 +171,36 @@ export class MemStorage implements IStorage {
       stripeSubscriptionId: stripeInfo.stripeSubscriptionId,
       isPremium: true
     };
+    this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+
+  async updateUserProfile(id: number, userData: { username?: string; email?: string }): Promise<User> {
+    const user = await this.getUser(id);
+    if (!user) throw new Error("User not found");
+    
+    // Check if username is being updated and is unique
+    if (userData.username && userData.username !== user.username) {
+      const existingUserWithUsername = await this.getUserByUsername(userData.username);
+      if (existingUserWithUsername) {
+        throw new Error("Username already taken");
+      }
+    }
+    
+    // Check if email is being updated and is unique
+    if (userData.email && userData.email !== user.email) {
+      const existingUserWithEmail = await this.getUserByEmail(userData.email);
+      if (existingUserWithEmail) {
+        throw new Error("Email already in use");
+      }
+    }
+    
+    const updatedUser = { 
+      ...user,
+      ...(userData.username && { username: userData.username }),
+      ...(userData.email && { email: userData.email })
+    };
+    
     this.users.set(id, updatedUser);
     return updatedUser;
   }
@@ -238,7 +271,12 @@ export class MemStorage implements IStorage {
   async createMood(mood: InsertMood): Promise<Mood> {
     const id = this.moodId++;
     const now = new Date();
-    const newMood: Mood = { ...mood, id, createdAt: now };
+    const newMood: Mood = { 
+      ...mood, 
+      id, 
+      createdAt: now,
+      note: mood.note || null // Ensure note is string or null, never undefined
+    };
     this.moods.set(id, newMood);
     return newMood;
   }
