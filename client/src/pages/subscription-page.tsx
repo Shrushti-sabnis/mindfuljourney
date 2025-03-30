@@ -1,262 +1,119 @@
-import { useState, useEffect } from "react";
-import { Sidebar } from "@/components/layout/sidebar";
-import { MobileHeader, MobileNavigation } from "@/components/layout/mobile-nav";
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Loader2, CheckCircle2, XCircle } from "lucide-react";
-import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-
-// Initialize Stripe
-const stripePromise = loadStripe(
-  import.meta.env.VITE_STRIPE_PUBLIC_KEY as string
-);
-
-// Checkout form component
-function CheckoutForm() {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!stripe || !elements) {
-      return;
-    }
-
-    setIsProcessing(true);
-    setErrorMessage(null);
-
-    const { error } = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: `${window.location.origin}?payment_success=true`,
-      },
-    });
-
-    setIsProcessing(false);
-
-    if (error) {
-      setErrorMessage(error.message || "An unknown error occurred");
-      toast({
-        title: "Payment failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <PaymentElement />
-      {errorMessage && (
-        <div className="text-sm text-destructive flex items-center mt-2">
-          <XCircle className="h-4 w-4 mr-1" />
-          {errorMessage}
-        </div>
-      )}
-      <Button 
-        type="submit" 
-        className="w-full bg-accent hover:bg-accent/90 text-white" 
-        disabled={!stripe || isProcessing}
-      >
-        {isProcessing ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Processing...
-          </>
-        ) : (
-          "Subscribe Now"
-        )}
-      </Button>
-    </form>
-  );
-}
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, CheckIcon, LockOpen, ShieldCheck, BarChart, Sparkles } from "lucide-react";
+import { useLocation } from "wouter";
 
 export default function SubscriptionPage() {
   const { user } = useAuth();
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-
-  // Create subscription mutation
-  const subscriptionMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/create-subscription");
-      return await response.json();
-    },
-    onSuccess: (data) => {
-      setClientSecret(data.clientSecret);
-    },
-    onError: (error: Error) => {
+  const [, setLocation] = useLocation();
+  
+  const handleSubscribe = async () => {
+    try {
+      setIsLoading(true);
+      const response = await apiRequest("POST", "/api/premium/activate");
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to activate premium");
+      }
+      
+      // Invalidate the user query to get the updated user data with isPremium=true
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      
       toast({
-        title: "Error creating subscription",
+        title: "Premium activated!",
+        description: "You now have access to all premium features",
+        variant: "default",
+      });
+      
+      // Navigate to the mindfulness page to explore premium content
+      setLocation("/mindfulness");
+    } catch (error: any) {
+      toast({
+        title: "Error activating premium",
         description: error.message,
         variant: "destructive",
       });
-    },
-  });
-
-  // Initialize subscription on component mount
-  useEffect(() => {
-    if (!user?.isPremium && !clientSecret) {
-      subscriptionMutation.mutate();
+    } finally {
+      setIsLoading(false);
     }
-  }, [user, clientSecret]);
-
-  // Check for successful payment from URL params
-  useEffect(() => {
-    const query = new URLSearchParams(window.location.search);
-    const paymentSuccess = query.get("payment_success");
-    
-    if (paymentSuccess === "true") {
-      toast({
-        title: "Payment successful!",
-        description: "Thank you for subscribing to MIND Premium.",
-      });
-      
-      // Clear the URL parameter without refreshing
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  }, []);
-
-  const premiumFeatures = [
-    "Advanced mood analytics and insights",
-    "Deep reflection journal prompts",
-    "Premium guided meditation sessions",
-    "Personalized mindfulness recommendations",
-    "Unlimited journal entries",
-    "Ad-free experience",
-  ];
-
+  };
+  
+  if (user?.isPremium) {
+    return (
+      <div className="max-w-md mx-auto mt-16 p-6 bg-card rounded-lg shadow-lg text-center">
+        <div className="flex items-center justify-center w-16 h-16 mx-auto bg-green-100 dark:bg-green-900 rounded-full mb-4">
+          <CheckIcon className="h-8 w-8 text-green-600 dark:text-green-400" />
+        </div>
+        <h1 className="text-2xl font-bold mb-4">You're a Premium Member!</h1>
+        <p className="text-muted-foreground mb-6">
+          You already have an active premium subscription. Enjoy all the advanced features!
+        </p>
+        <Button onClick={() => setLocation("/mindfulness")} className="w-full">
+          Access Premium Content
+        </Button>
+      </div>
+    );
+  }
+  
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-neutral-100">
-      <Sidebar />
-      
-      <div className="flex-1 pb-16 lg:pb-0">
-        <MobileHeader />
-        
-        <div className="container mx-auto px-4 py-6">
-          <h2 className="text-2xl font-bold font-heading mb-6">Premium Subscription</h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div>
-              <Card>
-                <CardHeader className="pb-4">
-                  <CardTitle>Upgrade Your Mental Wellness Journey</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="mb-6">
-                    <p className="text-neutral-600 mb-4">
-                      Unlock premium features to enhance your mental wellbeing experience with MIND.
-                    </p>
-                    
-                    <div className="bg-accent/10 p-4 rounded-lg mb-6">
-                      <div className="flex items-center">
-                        <span className="text-2xl font-bold text-accent">$9.99</span>
-                        <span className="text-neutral-500 ml-2">/ month</span>
-                      </div>
-                      <p className="text-sm text-neutral-600 mt-1">
-                        Cancel anytime. No long-term commitment required.
-                      </p>
-                    </div>
-                    
-                    <h3 className="font-medium mb-3">Premium Features Include:</h3>
-                    <ul className="space-y-2">
-                      {premiumFeatures.map((feature, index) => (
-                        <li key={index} className="flex items-start">
-                          <CheckCircle2 className="h-5 w-5 text-accent mr-2 flex-shrink-0" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-            
-            <div>
-              {user?.isPremium ? (
-                <Card>
-                  <CardHeader className="pb-4">
-                    <CardTitle>You're already a Premium Member!</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-8">
-                      <div className="w-16 h-16 mx-auto bg-accent/10 rounded-full flex items-center justify-center mb-4">
-                        <CheckCircle2 className="h-8 w-8 text-accent" />
-                      </div>
-                      <h3 className="text-xl font-semibold mb-2">Thank You for Your Support</h3>
-                      <p className="text-neutral-600 mb-4">
-                        You have full access to all premium features. Enjoy your enhanced mental wellness journey!
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : subscriptionMutation.isPending || !clientSecret ? (
-                <Card>
-                  <CardContent className="p-12 flex items-center justify-center">
-                    <div className="text-center">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-                      <p>Preparing subscription details...</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Complete Your Subscription</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Elements stripe={stripePromise} options={{ clientSecret }}>
-                      <CheckoutForm />
-                    </Elements>
-                  </CardContent>
-                  <CardFooter className="flex flex-col items-start border-t pt-6">
-                    <p className="text-sm text-neutral-500 mb-2">
-                      💳 Your payment is processed securely through Stripe
-                    </p>
-                    <p className="text-sm text-neutral-500">
-                      🔒 We do not store your payment details
-                    </p>
-                  </CardFooter>
-                </Card>
-              )}
-            </div>
+    <div className="max-w-3xl mx-auto mt-16 p-8">
+      <div className="grid md:grid-cols-2 gap-8 items-start">
+        <div className="space-y-6">
+          <h1 className="text-3xl font-bold tracking-tight">Upgrade to Premium</h1>
+          <div className="space-y-2">
+            <p className="text-muted-foreground">
+              Unlock advanced features and premium content to enhance your mental wellness journey.
+            </p>
           </div>
           
-          <div className="mt-8 p-6 bg-white rounded-lg shadow-sm">
-            <h3 className="text-lg font-medium mb-4">Frequently Asked Questions</h3>
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-medium">How does billing work?</h4>
-                <p className="text-sm text-neutral-600">
-                  You'll be charged monthly until you cancel. Your subscription renews automatically.
-                </p>
-              </div>
-              <div>
-                <h4 className="font-medium">Can I cancel anytime?</h4>
-                <p className="text-sm text-neutral-600">
-                  Yes, you can cancel your subscription at any time. You'll continue to have premium access until the end of your billing period.
-                </p>
-              </div>
-              <div>
-                <h4 className="font-medium">What payment methods are accepted?</h4>
-                <p className="text-sm text-neutral-600">
-                  We accept all major credit cards including Visa, Mastercard, American Express, and Discover.
-                </p>
-              </div>
-            </div>
+          <div className="border rounded-lg p-6 bg-card">
+            <h3 className="text-xl font-semibold mb-4">Premium Benefits</h3>
+            <ul className="space-y-3">
+              <li className="flex items-start">
+                <LockOpen className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
+                <span>Access to all premium mindfulness sessions</span>
+              </li>
+              <li className="flex items-start">
+                <ShieldCheck className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
+                <span>Exclusive deep reflection journal prompts</span>
+              </li>
+              <li className="flex items-start">
+                <BarChart className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
+                <span>Advanced mood analytics and insights</span>
+              </li>
+              <li className="flex items-start">
+                <Sparkles className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
+                <span>Ad-free experience across the platform</span>
+              </li>
+            </ul>
           </div>
         </div>
         
-        <MobileNavigation />
+        <div className="border rounded-lg p-6 bg-card">
+          <h2 className="text-xl font-semibold mb-4">Activate Premium</h2>
+          <p className="mb-6 text-muted-foreground">
+            Since this is a demo application, you can activate premium features instantly without payment.
+          </p>
+          <Button 
+            onClick={handleSubscribe} 
+            className="w-full"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
+            Activate Premium
+          </Button>
+          <p className="text-xs text-muted-foreground mt-4">
+            In a production app, this would connect to a real payment processor.
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -38,6 +38,7 @@ import { format } from "date-fns";
 import { Plus, Edit, Trash2, AlertCircle, ArrowLeft, Loader2, Lightbulb, X } from "lucide-react";
 
 import { JournalPrompts } from "@/components/journal/journal-prompts";
+import { NewJournalForm } from "@/components/journal/new-journal-form";
 
 export default function JournalPage() {
   const [location, navigate] = useLocation();
@@ -448,10 +449,10 @@ export default function JournalPage() {
                     <p className="whitespace-pre-wrap">{journal?.content}</p>
                   </CardContent>
                 </Card>
-              ) : (
+              ) : journalId && isEditing ? (
                 <Card>
                   <CardHeader>
-                    <CardTitle>{journalId ? "Edit Journal Entry" : "New Journal Entry"}</CardTitle>
+                    <CardTitle>Edit Journal Entry</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
@@ -547,6 +548,8 @@ export default function JournalPage() {
                     </Button>
                   </CardFooter>
                 </Card>
+              ) : (
+                <NewJournalForm />
               )}
               
               {!isEditing && !journalId && (

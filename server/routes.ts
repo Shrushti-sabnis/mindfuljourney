@@ -340,7 +340,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Stripe subscription routes
+  // Simple premium activation without Stripe
+  app.post("/api/premium/activate", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const user = req.user!;
+      
+      // Directly update user to premium status
+      const updatedUser = await storage.updateUserPremium(user.id, true);
+      
+      // Update the session with the new user data
+      req.login(updatedUser, (err) => {
+        if (err) {
+          console.error("Session update error:", err);
+          return res.status(500).json({ message: "Failed to update session" });
+        }
+        
+        // Return success message
+        res.json({
+          success: true,
+          message: "Premium activation successful",
+        });
+      });
+    } catch (error: any) {
+      console.error("Premium activation error:", error);
+      res.status(400).json({ message: error.message || "Failed to activate premium" });
+    }
+  });
+  
+  // Stripe subscription routes (keeping the endpoint for compatibility but using our simplified approach)
   if (stripeEnabled && stripe) {
     app.post("/api/create-subscription", async (req, res) => {
       if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -348,64 +377,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const user = req.user!;
         
-        // Check if user already has a subscription
-        if (user.stripeSubscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+        // Instead of using Stripe, directly mark the user as premium
+        const updatedUser = await storage.updateUserPremium(user.id, true);
+        
+        // Update the session with the new user data
+        req.login(updatedUser, (err) => {
+          if (err) {
+            console.error("Session update error:", err);
+            return res.status(500).json({ message: "Failed to update session" });
+          }
           
-          // Type assertion to handle Stripe types
-          const invoice = subscription.latest_invoice as any;
-          const paymentIntent = invoice?.payment_intent;
-          
+          // Return a simplified success response
           res.json({
-            subscriptionId: subscription.id,
-            clientSecret: paymentIntent?.client_secret,
+            success: true,
+            message: "Premium activated successfully",
           });
-          
-          return;
-        }
-        
-        if (!user.email) {
-          return res.status(400).json({ message: "User email is required" });
-        }
-        
-        // Create a new customer
-        const customer = await stripe.customers.create({
-          email: user.email,
-          name: user.username,
-        });
-        
-        // Price ID should be set in environment variables
-        const priceId = process.env.STRIPE_PRICE_ID;
-        
-        if (!priceId) {
-          return res.status(500).json({ message: "Stripe price ID is not configured" });
-        }
-        
-        // Create the subscription
-        const subscription = await stripe.subscriptions.create({
-          customer: customer.id,
-          items: [{ price: priceId }],
-          payment_behavior: 'default_incomplete',
-          expand: ['latest_invoice.payment_intent'],
-        });
-        
-        // Update user with Stripe customer ID and subscription ID
-        await storage.updateUserStripeInfo(user.id, {
-          stripeCustomerId: customer.id,
-          stripeSubscriptionId: subscription.id,
-        });
-        
-        // Type assertion to handle Stripe types
-        const invoice = subscription.latest_invoice as any;
-        const paymentIntent = invoice?.payment_intent;
-        
-        res.json({
-          subscriptionId: subscription.id,
-          clientSecret: paymentIntent?.client_secret,
         });
       } catch (error: any) {
-        console.error("Stripe subscription error:", error);
-        res.status(400).json({ message: error.message });
+        console.error("Subscription error:", error);
+        res.status(400).json({ message: error.message || "Failed to activate premium" });
       }
     });
     
