@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Loader2 } from "lucide-react";
 import { JournalPrompts } from "./journal-prompts";
+import { useLocation } from "wouter";
 import {
   Form,
   FormControl,
@@ -24,33 +25,65 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// Define the schema for the journal form validation
 const journalSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters").max(100, "Title can't exceed 100 characters"),
   content: z.string().min(10, "Content must be at least 10 characters"),
-  mood: z.string().optional(),
+  mood: z.string().transform(val => parseInt(val)), // Convert string to number for mood
 });
 
 type JournalFormValues = z.infer<typeof journalSchema>;
 
+// Mood options for the select field
+const moodOptions = [
+  { value: "5", label: "Great", emoji: "😊" },
+  { value: "4", label: "Good", emoji: "😌" },
+  { value: "3", label: "Okay", emoji: "😐" },
+  { value: "2", label: "Low", emoji: "😔" },
+  { value: "1", label: "Rough", emoji: "😟" },
+];
+
 export function NewJournalForm() {
   const { toast } = useToast();
-  const [selectedPrompt, setSelectedPrompt] = useState<string>("");
+  const [_, navigate] = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Initialize the form with react-hook-form
   const form = useForm<JournalFormValues>({
     resolver: zodResolver(journalSchema),
     defaultValues: {
       title: "",
       content: "",
-      mood: "neutral",
+      mood: "3", // Default to "Okay"
     },
   });
 
+  // Handle selecting a journal prompt
   const handlePromptSelect = (prompt: string) => {
-    setSelectedPrompt(prompt);
-    form.setValue("content", form.getValues("content") + (form.getValues("content") ? "\n\n" : "") + prompt);
+    // If content is empty, just set it to the prompt
+    if (!form.getValues("content")) {
+      form.setValue("content", prompt);
+    } else {
+      // Otherwise, append the prompt to the existing content with a line break
+      form.setValue(
+        "content", 
+        form.getValues("content") + "\n\n" + prompt
+      );
+    }
+
+    // Focus the textarea after adding the prompt
+    setTimeout(() => {
+      const textarea = document.querySelector('textarea[name="content"]') as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
+        // Place cursor at the end
+        textarea.selectionStart = textarea.value.length;
+        textarea.selectionEnd = textarea.value.length;
+      }
+    }, 100);
   };
 
+  // Submit handler for the form
   const onSubmit = async (data: JournalFormValues) => {
     setIsSubmitting(true);
     
@@ -61,6 +94,8 @@ export function NewJournalForm() {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to create journal entry");
       }
+
+      const journal = await response.json();
       
       // Invalidate journals query to refresh the list
       queryClient.invalidateQueries({ queryKey: ["/api/journals"] });
@@ -70,10 +105,22 @@ export function NewJournalForm() {
         description: "Your journal entry has been saved successfully.",
       });
       
-      // Reset form
-      form.reset();
-      setSelectedPrompt("");
+      // Navigate to the journal details page
+      navigate(`/journal?id=${journal.id}`);
     } catch (error: any) {
+      console.error("Error creating journal:", error);
+      
+      // If it's an authentication error, redirect to login
+      if (error.message.includes("401")) {
+        toast({
+          title: "Authentication required",
+          description: "Please login to create a journal entry.",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        return;
+      }
+      
       toast({
         title: "Error Creating Journal Entry",
         description: error.message,
@@ -85,7 +132,7 @@ export function NewJournalForm() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="bg-white rounded-lg shadow-sm p-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
           <Form {...form}>
@@ -113,22 +160,25 @@ export function NewJournalForm() {
                 name="mood"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Current Mood</FormLabel>
+                    <FormLabel>How are you feeling?</FormLabel>
                     <Select
                       onValueChange={field.onChange}
                       defaultValue={field.value}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select your current mood" />
+                          <SelectValue placeholder="Select your mood" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="very_happy">Very Happy</SelectItem>
-                        <SelectItem value="happy">Happy</SelectItem>
-                        <SelectItem value="neutral">Neutral</SelectItem>
-                        <SelectItem value="sad">Sad</SelectItem>
-                        <SelectItem value="very_sad">Very Sad</SelectItem>
+                        {moodOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <div className="flex items-center">
+                              <span className="mr-2">{option.emoji}</span>
+                              <span>{option.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -156,13 +206,17 @@ export function NewJournalForm() {
               
               <Button
                 type="submit"
-                className="w-full"
+                className="w-full bg-primary hover:bg-primary/90 text-white"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Save Journal Entry
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Save Journal Entry"
+                )}
               </Button>
             </form>
           </Form>
