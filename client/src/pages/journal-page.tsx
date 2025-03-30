@@ -35,7 +35,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
-import { Plus, Edit, Trash2, AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
+import { Plus, Edit, Trash2, AlertCircle, ArrowLeft, Loader2, Lightbulb, X } from "lucide-react";
+
+import { JournalPrompts } from "@/components/journal/journal-prompts";
 
 export default function JournalPage() {
   const [location, navigate] = useLocation();
@@ -48,6 +50,7 @@ export default function JournalPage() {
   const [content, setContent] = useState("");
   const [mood, setMood] = useState<string>("3");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [showPrompts, setShowPrompts] = useState(false);
   
   const { toast } = useToast();
 
@@ -201,10 +204,33 @@ export default function JournalPage() {
         setMood(journal.mood.toString());
       }
       setIsEditing(false);
+      setShowPrompts(false);
     } else {
       // Return to journal list
       navigate("/journal");
     }
+  };
+  
+  const handlePromptSelect = (prompt: string) => {
+    // If content is empty, just set it to the prompt
+    if (!content.trim()) {
+      setContent(prompt);
+    } else {
+      // Otherwise, append the prompt to the existing content with a line break
+      setContent(prevContent => `${prevContent}\n\n${prompt}`);
+    }
+    setShowPrompts(false);
+    
+    // Focus the textarea after adding the prompt
+    setTimeout(() => {
+      const textarea = document.getElementById("content") as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
+        // Place cursor at the end
+        textarea.selectionStart = textarea.value.length;
+        textarea.selectionEnd = textarea.value.length;
+      }
+    }, 100);
   };
 
   const getMoodEmoji = (moodValue: number) => {
@@ -374,13 +400,41 @@ export default function JournalPage() {
                     </div>
                     
                     <div>
-                      <Label htmlFor="content">Content</Label>
+                      <div className="flex items-center justify-between mb-1">
+                        <Label htmlFor="content">Content</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowPrompts(!showPrompts)}
+                          className="text-sm"
+                        >
+                          {showPrompts ? (
+                            <>
+                              <X className="h-4 w-4 mr-1" />
+                              Hide Prompts
+                            </>
+                          ) : (
+                            <>
+                              <Lightbulb className="h-4 w-4 mr-1" />
+                              Writing Prompts
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      
+                      {showPrompts && (
+                        <div className="mb-3 border rounded-md p-4 bg-neutral-50">
+                          <JournalPrompts onSelectPrompt={handlePromptSelect} />
+                        </div>
+                      )}
+                      
                       <Textarea
                         id="content"
                         value={content}
                         onChange={(e) => setContent(e.target.value)}
                         placeholder="Write your thoughts here..."
-                        className="mt-1 min-h-[200px]"
+                        className="min-h-[200px]"
                       />
                     </div>
                     
