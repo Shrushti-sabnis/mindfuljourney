@@ -548,9 +548,9 @@ export default function JournalPage() {
                     </Button>
                   </CardFooter>
                 </Card>
-              ) : (
+              ) : !journalId ? (
                 <NewJournalForm />
-              )}
+              ) : null}
               
               {!isEditing && !journalId && (
                 <div className="mt-6">
