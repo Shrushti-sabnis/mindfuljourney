@@ -17,6 +17,8 @@ function Router() {
     <Switch>
       <ProtectedRoute path="/" component={DashboardPage} />
       <ProtectedRoute path="/journal" component={JournalPage} />
+      <ProtectedRoute path="/journal/new" component={JournalPage} />
+      <ProtectedRoute path="/journal/:id" component={JournalPage} />
       <ProtectedRoute path="/mood" component={MoodPage} />
       <ProtectedRoute path="/mindfulness" component={MindfulnessPage} />
       <ProtectedRoute path="/subscribe" component={SubscriptionPage} />

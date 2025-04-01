@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { JournalView } from "@/components/journal/journal-view";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,8 @@ import { Plus, Edit, Trash2, AlertCircle, ArrowLeft, Loader2, Lightbulb, X } fro
 
 import { JournalPrompts } from "@/components/journal/journal-prompts";
 import { NewJournalForm } from "@/components/journal/new-journal-form";
+import { JournalList } from "@/components/journal/journal-list";
+import { EditJournalForm } from "@/components/journal/edit-journal-form";
 
 export default function JournalPage() {
   const [location, navigate] = useLocation();
@@ -431,176 +434,27 @@ export default function JournalPage() {
                   </p>
                 </div>
               ) : journalId && !isEditing ? (
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>{journal?.title}</CardTitle>
-                      <div className="flex items-center">
-                        <span className="text-xl mr-2">
-                          {getMoodEmoji(journal?.mood || 3)}
-                        </span>
-                        <span className="text-sm text-neutral-500">
-                          {journal && format(new Date(journal.createdAt), "MMM d, yyyy • h:mm a")}
-                        </span>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="whitespace-pre-wrap">{journal?.content}</p>
-                  </CardContent>
-                </Card>
-              ) : journalId && isEditing ? (
+                journal && <JournalView journal={journal} />
+              ) : journalId && isEditing && journal ? (
                 <Card>
                   <CardHeader>
                     <CardTitle>Edit Journal Entry</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <Label htmlFor="title">Title</Label>
-                      <Input
-                        id="title"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="Enter a title for your journal entry"
-                        className="mt-1"
-                      />
-                    </div>
-                    
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <Label htmlFor="content">Content</Label>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setShowPrompts(!showPrompts)}
-                          className="text-sm"
-                        >
-                          {showPrompts ? (
-                            <>
-                              <X className="h-4 w-4 mr-1" />
-                              Hide Prompts
-                            </>
-                          ) : (
-                            <>
-                              <Lightbulb className="h-4 w-4 mr-1" />
-                              Writing Prompts
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                      
-                      {showPrompts && (
-                        <div className="mb-3 border rounded-md p-4 bg-neutral-50">
-                          <JournalPrompts onSelectPrompt={handlePromptSelect} />
-                        </div>
-                      )}
-                      
-                      <Textarea
-                        id="content"
-                        value={content}
-                        onChange={(e) => setContent(e.target.value)}
-                        placeholder="Write your thoughts here..."
-                        className="min-h-[200px]"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="mood">How are you feeling?</Label>
-                      <Select value={mood} onValueChange={setMood}>
-                        <SelectTrigger id="mood" className="mt-1">
-                          <SelectValue placeholder="Select your mood" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {moodOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              <div className="flex items-center">
-                                <span className="mr-2">{option.emoji}</span>
-                                <span>{option.label}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <CardContent>
+                    <EditJournalForm
+                      journal={journal}
+                      onCancel={handleCancel}
+                      onSuccess={() => setIsEditing(false)}
+                    />
                   </CardContent>
-                  <CardFooter className="justify-between">
-                    <Button 
-                      variant="outline" 
-                      onClick={handleCancel}
-                      disabled={isPending}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={handleSave}
-                      className="bg-primary hover:bg-primary/90 text-white"
-                      disabled={isPending}
-                    >
-                      {isPending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          {journalId ? "Updating..." : "Creating..."}
-                        </>
-                      ) : (
-                        "Save Journal"
-                      )}
-                    </Button>
-                  </CardFooter>
                 </Card>
               ) : !journalId ? (
                 <NewJournalForm />
               ) : null}
               
-              {!isEditing && !journalId && (
+              {!isEditing && !journalId && journals && (
                 <div className="mt-6">
-                  <h3 className="text-lg font-medium mb-4">Journal Entries</h3>
-                  
-                  <div className="mb-4">
-                    <Button
-                      onClick={() => {
-                        setTitle("");
-                        setContent("");
-                        setMood("3");
-                        setIsEditing(true);
-                      }}
-                      className="bg-primary hover:bg-primary/90 text-white"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      New Entry
-                    </Button>
-                  </div>
-                  
-                  {journals?.length === 0 ? (
-                    <Card className="bg-neutral-50">
-                      <CardContent className="p-6 text-center">
-                        <p className="text-neutral-600">No journal entries yet.</p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <div className="space-y-4">
-                      {journals?.map((journal) => (
-                        <div
-                          key={journal.id}
-                          onClick={() => navigate(`/journal?id=${journal.id}`)}
-                          className="border border-neutral-200 rounded-lg p-4 bg-white hover:shadow-sm transition cursor-pointer"
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <h4 className="font-medium">{journal.title}</h4>
-                            <div className="flex items-center">
-                              <span className="text-lg">{getMoodEmoji(journal.mood)}</span>
-                              <span className="text-sm text-neutral-500 ml-2">
-                                {format(new Date(journal.createdAt), "MMM d, yyyy")}
-                              </span>
-                            </div>
-                          </div>
-                          <p className="text-neutral-600 line-clamp-2 text-sm">
-                            {journal.content}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <JournalList journals={journals} />
                 </div>
               )}
             </>
